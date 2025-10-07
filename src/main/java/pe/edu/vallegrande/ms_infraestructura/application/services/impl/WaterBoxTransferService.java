@@ -1,6 +1,7 @@
 package pe.edu.vallegrande.ms_infraestructura.application.services.impl;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxTransferService;
@@ -15,92 +16,110 @@ import pe.edu.vallegrande.ms_infraestructura.infrastructure.exceptions.NotFoundE
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxAssignmentRepository;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxRepository;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxTransferRepository;
+import pe.edu.vallegrande.ms_infraestructura.infrastructure.service.ReactiveJwtService;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WaterBoxTransferService implements IWaterBoxTransferService {
 
     private final WaterBoxTransferRepository waterBoxTransferRepository;
     private final WaterBoxAssignmentRepository waterBoxAssignmentRepository;
     private final WaterBoxRepository waterBoxRepository;
+    private final ReactiveJwtService jwtService;
 
     @Override
     @Transactional(readOnly = true)
-    public List<WaterBoxTransferResponse> getAll() {
-        return waterBoxTransferRepository.findAll().stream()
+    public Flux<WaterBoxTransferResponse> getAll() {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando todas las transferencias", userInfo.getUsername()))
+                .flatMapMany(userInfo -> waterBoxTransferRepository.findAll())
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .doOnNext(response -> log.debug("Transferencia encontrada: {}", response.getId()));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public WaterBoxTransferResponse getById(Long id) {
-        WaterBoxTransfer transfer = waterBoxTransferRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBoxTransfer con ID " + id + " no encontrada."));
-        return toResponse(transfer);
+    public Mono<WaterBoxTransferResponse> getById(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando transferencia con ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxTransferRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBoxTransfer con ID " + id + " no encontrada.")))
+                .map(this::toResponse)
+                .doOnNext(response -> log.debug("Transferencia encontrada: {}", response.getId()));
     }
 
     @Override
     @Transactional
-    public WaterBoxTransferResponse save(WaterBoxTransferRequest request) {
-        // 1. Validar que la caja de agua exista y esté activa
-        WaterBox waterBox = waterBoxRepository.findById(request.getWaterBoxId())
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada."));
-
-        if (waterBox.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("No se puede transferir una WaterBox inactiva.");
-        }
-
-        // 2. Validar y procesar la asignación antigua (old_assignment_id)
-        WaterBoxAssignment oldAssignment = waterBoxAssignmentRepository.findById(request.getOldAssignmentId())
-                .orElseThrow(() -> new NotFoundException("Asignación antigua con ID " + request.getOldAssignmentId() + " no encontrada."));
-
-        if (!oldAssignment.getWaterBoxId().equals(waterBox.getId())) {
-            throw new BadRequestException("La asignación antigua no pertenece a la WaterBox especificada.");
-        }
-        if (oldAssignment.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("La asignación antigua ya está inactiva. No se puede iniciar transferencia desde una asignación inactiva.");
-        }
-        // Asegurarse de que la oldAssignmentId sea la asignación actualmente activa para esa caja de agua
-        if (waterBox.getCurrentAssignmentId() == null || !waterBox.getCurrentAssignmentId().equals(oldAssignment.getId())) {
-            throw new BadRequestException("La asignación antigua proporcionada no es la asignación actual activa para esta WaterBox.");
-        }
-
-
-        // 3. Validar y procesar la nueva asignación (new_assignment_id)
-        WaterBoxAssignment newAssignment = waterBoxAssignmentRepository.findById(request.getNewAssignmentId())
-                .orElseThrow(() -> new NotFoundException("Nueva asignación con ID " + request.getNewAssignmentId() + " no encontrada."));
-
-        if (!newAssignment.getWaterBoxId().equals(waterBox.getId())) {
-            throw new BadRequestException("La nueva asignación no pertenece a la WaterBox especificada.");
-        }
-        if (newAssignment.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("La nueva asignación está inactiva. Debería estar activa para una nueva transferencia.");
-        }
-        if (newAssignment.getId().equals(oldAssignment.getId())) {
-            throw new BadRequestException("La asignación antigua y la nueva no pueden ser la misma.");
-        }
-
-        // 4. Crear la transferencia
-        WaterBoxTransfer transfer = toEntity(request);
-        transfer.setCreatedAt(LocalDateTime.now());
-        WaterBoxTransfer savedTransfer = waterBoxTransferRepository.save(transfer);
-
-        // 5. Actualizar la asignación antigua: desactivarla y asignarle la fecha de fin y el ID de transferencia
-        oldAssignment.setStatus(Status.INACTIVE);
-        oldAssignment.setEndDate(LocalDateTime.now());
-        oldAssignment.setTransferId(savedTransfer.getId());
-        waterBoxAssignmentRepository.save(oldAssignment);
-
-        // 6. Actualizar la caja de agua con la nueva asignación actual
-        waterBox.setCurrentAssignmentId(newAssignment.getId());
-        waterBoxRepository.save(waterBox);
-
-        return toResponse(savedTransfer);
+    public Mono<WaterBoxTransferResponse> save(WaterBoxTransferRequest request) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} creando transferencia para WaterBox ID: {}", userInfo.getUsername(), request.getWaterBoxId()))
+                .flatMap(userInfo -> 
+                    // 1. Validar que la caja de agua exista y esté activa
+                    waterBoxRepository.findById(request.getWaterBoxId())
+                            .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada.")))
+                            .flatMap(waterBox -> {
+                                if (waterBox.getStatus().equals(Status.INACTIVE)) {
+                                    return Mono.error(new BadRequestException("No se puede transferir una WaterBox inactiva."));
+                                }
+                                
+                                // 2. Validar asignación antigua
+                                return waterBoxAssignmentRepository.findById(request.getOldAssignmentId())
+                                        .switchIfEmpty(Mono.error(new NotFoundException("Asignación antigua con ID " + request.getOldAssignmentId() + " no encontrada.")))
+                                        .flatMap(oldAssignment -> {
+                                            if (!oldAssignment.getWaterBoxId().equals(waterBox.getId())) {
+                                                return Mono.error(new BadRequestException("La asignación antigua no pertenece a la WaterBox especificada."));
+                                            }
+                                            if (oldAssignment.getStatus().equals(Status.INACTIVE)) {
+                                                return Mono.error(new BadRequestException("La asignación antigua ya está inactiva."));
+                                            }
+                                            if (waterBox.getCurrentAssignmentId() == null || !waterBox.getCurrentAssignmentId().equals(oldAssignment.getId())) {
+                                                return Mono.error(new BadRequestException("La asignación antigua proporcionada no es la asignación actual activa."));
+                                            }
+                                            
+                                            // 3. Validar nueva asignación
+                                            return waterBoxAssignmentRepository.findById(request.getNewAssignmentId())
+                                                    .switchIfEmpty(Mono.error(new NotFoundException("Nueva asignación con ID " + request.getNewAssignmentId() + " no encontrada.")))
+                                                    .flatMap(newAssignment -> {
+                                                        if (!newAssignment.getWaterBoxId().equals(waterBox.getId())) {
+                                                            return Mono.error(new BadRequestException("La nueva asignación no pertenece a la WaterBox especificada."));
+                                                        }
+                                                        if (newAssignment.getStatus().equals(Status.INACTIVE)) {
+                                                            return Mono.error(new BadRequestException("La nueva asignación está inactiva."));
+                                                        }
+                                                        if (newAssignment.getId().equals(oldAssignment.getId())) {
+                                                            return Mono.error(new BadRequestException("La asignación antigua y la nueva no pueden ser la misma."));
+                                                        }
+                                                        
+                                                        // 4. Crear la transferencia
+                                                        WaterBoxTransfer transfer = toEntity(request);
+                                                        transfer.setCreatedAt(LocalDateTime.now());
+                                                        
+                                                        return waterBoxTransferRepository.save(transfer)
+                                                                .flatMap(savedTransfer -> {
+                                                                    // 5. Actualizar asignación antigua
+                                                                    oldAssignment.setStatus(Status.INACTIVE);
+                                                                    oldAssignment.setEndDate(LocalDateTime.now());
+                                                                    oldAssignment.setTransferId(savedTransfer.getId());
+                                                                    
+                                                                    return waterBoxAssignmentRepository.save(oldAssignment)
+                                                                            .flatMap(updatedOldAssignment -> {
+                                                                                // 6. Actualizar WaterBox con nueva asignación
+                                                                                waterBox.setCurrentAssignmentId(newAssignment.getId());
+                                                                                return waterBoxRepository.save(waterBox)
+                                                                                        .thenReturn(savedTransfer);
+                                                                            });
+                                                                });
+                                                    });
+                                        });
+                            })
+                )
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Transferencia creada exitosamente: {}", response.getId()));
     }
 
     private WaterBoxTransfer toEntity(WaterBoxTransferRequest request) {
@@ -109,7 +128,7 @@ public class WaterBoxTransferService implements IWaterBoxTransferService {
                 .oldAssignmentId(request.getOldAssignmentId())
                 .newAssignmentId(request.getNewAssignmentId())
                 .transferReason(request.getTransferReason())
-                .documents(request.getDocuments())
+                .documentsJson(request.getDocuments() != null ? String.join(",", request.getDocuments()) : null)
                 .build();
     }
 

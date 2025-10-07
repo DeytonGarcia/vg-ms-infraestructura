@@ -1,16 +1,18 @@
 spring:
-     jpa:
-          properties:
-               hibernate:
-                    dialect: org.hibernate.dialect.PostgreSQLDialect
-                    format_sql: "true"
-          hibernate:
-               ddl-auto: update
-          show-sql: "true"
-     datasource:
-          url: jdbc:postgresql://ep-ancient-heart-adqsgk4v-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+     r2dbc:
+          url: r2dbc:postgresql://ep-ancient-heart-adqsgk4v-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
           username: neondb_owner
           password: npg_D5vbm4icMYuf
+          pool:
+               initial-size: 5
+               max-size: 20
+               max-idle-time: 30m
+               validation-query: SELECT 1
+     data:
+          r2dbc:
+               repositories:
+                    enabled: true
+          
 # CONFIGURACIÓN OAUTH2 RESOURCE SERVER (KEYCLOAK JWK SET)
      security:
           oauth2:

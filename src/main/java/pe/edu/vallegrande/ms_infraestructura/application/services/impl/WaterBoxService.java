@@ -1,6 +1,7 @@
 package pe.edu.vallegrande.ms_infraestructura.application.services.impl;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxService;
@@ -11,105 +12,126 @@ import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBo
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.exceptions.BadRequestException;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.exceptions.NotFoundException;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxRepository;
+import pe.edu.vallegrande.ms_infraestructura.infrastructure.service.ReactiveJwtService;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WaterBoxService implements IWaterBoxService {
 
     private final WaterBoxRepository waterBoxRepository;
+    private final ReactiveJwtService jwtService;
 
     @Override
     @Transactional(readOnly = true)
-    public List<WaterBoxResponse> getAllActive() {
-        return waterBoxRepository.findByStatus(Status.ACTIVE).stream()
+    public Flux<WaterBoxResponse> getAllActive() {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando cajas de agua activas", userInfo.getUsername()))
+                .flatMapMany(userInfo -> waterBoxRepository.findByStatus(Status.ACTIVE))
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .doOnNext(response -> log.debug("Caja de agua activa encontrada: {}", response.getBoxCode()));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<WaterBoxResponse> getAllInactive() {
-        return waterBoxRepository.findByStatus(Status.INACTIVE).stream()
+    public Flux<WaterBoxResponse> getAllInactive() {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando cajas de agua inactivas", userInfo.getUsername()))
+                .flatMapMany(userInfo -> waterBoxRepository.findByStatus(Status.INACTIVE))
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .doOnNext(response -> log.debug("Caja de agua inactiva encontrada: {}", response.getBoxCode()));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public WaterBoxResponse getById(Long id) {
-        WaterBox waterBox = waterBoxRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + id + " no encontrada."));
-        return toResponse(waterBox);
+    public Mono<WaterBoxResponse> getById(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando caja de agua con ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + id + " no encontrada.")))
+                .map(this::toResponse)
+                .doOnNext(response -> log.debug("Caja de agua encontrada: {}", response.getBoxCode()));
     }
 
     @Override
     @Transactional
-    public WaterBoxResponse save(WaterBoxRequest request) {
-        // Opcional: Validar si organizationId existe en un microservicio de organizaciones
-        WaterBox waterBox = toEntity(request);
-        waterBox.setStatus(Status.ACTIVE);
-        waterBox.setCreatedAt(LocalDateTime.now());
-        WaterBox savedWaterBox = waterBoxRepository.save(waterBox);
-        return toResponse(savedWaterBox);
+    public Mono<WaterBoxResponse> save(WaterBoxRequest request) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} creando nueva caja de agua: {}", userInfo.getUsername(), request.getBoxCode()))
+                .map(userInfo -> {
+                    WaterBox waterBox = toEntity(request);
+                    waterBox.setStatus(Status.ACTIVE);
+                    waterBox.setCreatedAt(LocalDateTime.now());
+                    return waterBox;
+                })
+                .flatMap(waterBoxRepository::save)
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Caja de agua creada exitosamente: {}", response.getBoxCode()));
     }
 
     @Override
     @Transactional
-    public WaterBoxResponse update(Long id, WaterBoxRequest request) {
-        WaterBox existingWaterBox = waterBoxRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + id + " no encontrada para actualizar."));
-
-        existingWaterBox.setOrganizationId(request.getOrganizationId());
-        existingWaterBox.setBoxCode(request.getBoxCode());
-        existingWaterBox.setBoxType(request.getBoxType());
-        existingWaterBox.setInstallationDate(request.getInstallationDate());
-        // currentAssignmentId y status no se actualizan directamente desde aquí,
-        // sino a través de operaciones de asignación y transferencia.
-
-        WaterBox updatedWaterBox = waterBoxRepository.save(existingWaterBox);
-        return toResponse(updatedWaterBox);
+    public Mono<WaterBoxResponse> update(Long id, WaterBoxRequest request) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} actualizando caja de agua ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + id + " no encontrada para actualizar.")))
+                .map(existingWaterBox -> {
+                    existingWaterBox.setOrganizationId(request.getOrganizationId());
+                    existingWaterBox.setBoxCode(request.getBoxCode());
+                    existingWaterBox.setBoxType(request.getBoxType());
+                    existingWaterBox.setInstallationDate(request.getInstallationDate());
+                    return existingWaterBox;
+                })
+                .flatMap(waterBoxRepository::save)
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Caja de agua actualizada exitosamente: {}", response.getBoxCode()));
     }
 
     @Override
     @Transactional
-    public void delete(Long id) { // Soft delete
-        WaterBox waterBox = waterBoxRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + id + " no encontrada para eliminación."));
-
-        if (waterBox.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("WaterBox con ID " + id + " ya está inactiva.");
-        }
-
-        // Si la caja de agua tiene una asignación actual, debe desvincularse.
-        // La lógica de negocio aquí sería que una caja de agua inactiva NO debe tener una asignación actual.
-        if (waterBox.getCurrentAssignmentId() != null) {
-            throw new BadRequestException("WaterBox con ID " + id + " tiene una asignación activa. Desactive la asignación primero.");
-            // O podrías poner waterBox.setCurrentAssignmentId(null); y guardar waterBox
-            // Dependerá de la regla de negocio: si al borrar la caja, se desactivan automáticamente las asignaciones.
-            // Por simplicidad, asumimos que no se puede eliminar si tiene asignación activa.
-        }
-
-        waterBox.setStatus(Status.INACTIVE);
-        waterBoxRepository.save(waterBox);
+    public Mono<Void> delete(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} eliminando caja de agua ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + id + " no encontrada para eliminación.")))
+                .flatMap(waterBox -> {
+                    if (waterBox.getStatus().equals(Status.INACTIVE)) {
+                        return Mono.error(new BadRequestException("WaterBox con ID " + id + " ya está inactiva."));
+                    }
+                    
+                    if (waterBox.getCurrentAssignmentId() != null) {
+                        return Mono.error(new BadRequestException("WaterBox con ID " + id + " tiene una asignación activa. Desactive la asignación primero."));
+                    }
+                    
+                    waterBox.setStatus(Status.INACTIVE);
+                    return waterBoxRepository.save(waterBox);
+                })
+                .then()
+                .doOnSuccess(unused -> log.info("Caja de agua ID: {} eliminada exitosamente", id));
     }
 
     @Override
     @Transactional
-    public WaterBoxResponse restore(Long id) { // Restore soft deleted
-        WaterBox waterBox = waterBoxRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + id + " no encontrada para restauración."));
-
-        if (waterBox.getStatus().equals(Status.ACTIVE)) {
-            throw new BadRequestException("WaterBox con ID " + id + " ya está activa.");
-        }
-
-        waterBox.setStatus(Status.ACTIVE);
-        WaterBox restoredWaterBox = waterBoxRepository.save(waterBox);
-        return toResponse(restoredWaterBox);
+    public Mono<WaterBoxResponse> restore(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} restaurando caja de agua ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + id + " no encontrada para restauración.")))
+                .flatMap(waterBox -> {
+                    if (waterBox.getStatus().equals(Status.ACTIVE)) {
+                        return Mono.error(new BadRequestException("WaterBox con ID " + id + " ya está activa."));
+                    }
+                    
+                    waterBox.setStatus(Status.ACTIVE);
+                    return waterBoxRepository.save(waterBox);
+                })
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Caja de agua restaurada exitosamente: {}", response.getBoxCode()));
     }
 
     private WaterBox toEntity(WaterBoxRequest request) {

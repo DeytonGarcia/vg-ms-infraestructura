@@ -2,15 +2,15 @@ package pe.edu.vallegrande.ms_infraestructura.application.services;
 
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.request.WaterBoxAssignmentRequest;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxAssignmentResponse;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public interface IWaterBoxAssignmentService {
-    List<WaterBoxAssignmentResponse> getAllActive();
-    List<WaterBoxAssignmentResponse> getAllInactive();
-    WaterBoxAssignmentResponse getById(Long id);
-    WaterBoxAssignmentResponse save(WaterBoxAssignmentRequest request);
-    WaterBoxAssignmentResponse update(Long id, WaterBoxAssignmentRequest request);
-    void delete(Long id); // Soft delete
-    WaterBoxAssignmentResponse restore(Long id); // Restore soft deleted
+    Flux<WaterBoxAssignmentResponse> getAllActive();
+    Flux<WaterBoxAssignmentResponse> getAllInactive();
+    Mono<WaterBoxAssignmentResponse> getById(Long id);
+    Mono<WaterBoxAssignmentResponse> save(WaterBoxAssignmentRequest request);
+    Mono<WaterBoxAssignmentResponse> update(Long id, WaterBoxAssignmentRequest request);
+    Mono<Void> delete(Long id); // Soft delete
+    Mono<WaterBoxAssignmentResponse> restore(Long id); // Restore soft deleted
 }

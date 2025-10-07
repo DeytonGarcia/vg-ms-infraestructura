@@ -3,7 +3,7 @@ package pe.edu.vallegrande.ms_infraestructura.infrastructure.rest.admin;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxService;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxAssignmentService;
@@ -14,8 +14,8 @@ import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.request.WaterBox
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxResponse;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxAssignmentResponse;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxTransferResponse;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -31,39 +31,47 @@ public class AdminRest {
     // ===============================
 
     @GetMapping("/water-boxes/active")
-    public ResponseEntity<List<WaterBoxResponse>> getAllActiveWaterBoxes() {
-        return ResponseEntity.ok(waterBoxService.getAllActive());
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<WaterBoxResponse> getAllActiveWaterBoxes() {
+        return waterBoxService.getAllActive();
     }
 
     @GetMapping("/water-boxes/inactive")
-    public ResponseEntity<List<WaterBoxResponse>> getAllInactiveWaterBoxes() {
-        return ResponseEntity.ok(waterBoxService.getAllInactive());
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<WaterBoxResponse> getAllInactiveWaterBoxes() {
+        return waterBoxService.getAllInactive();
     }
 
     @GetMapping("/water-boxes/{id}")
-    public ResponseEntity<WaterBoxResponse> getWaterBoxById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxService.getById(id));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxResponse> getWaterBoxById(@PathVariable Long id) {
+        return waterBoxService.getById(id);
     }
 
     @PostMapping("/water-boxes")
-    public ResponseEntity<WaterBoxResponse> createWaterBox(@Valid @RequestBody WaterBoxRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(waterBoxService.save(request));
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxResponse> createWaterBox(@Valid @RequestBody WaterBoxRequest request) {
+        return waterBoxService.save(request);
     }
 
     @PutMapping("/water-boxes/{id}")
-    public ResponseEntity<WaterBoxResponse> updateWaterBox(@PathVariable Long id, @Valid @RequestBody WaterBoxRequest request) {
-        return ResponseEntity.ok(waterBoxService.update(id, request));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxResponse> updateWaterBox(@PathVariable Long id, @Valid @RequestBody WaterBoxRequest request) {
+        return waterBoxService.update(id, request);
     }
 
     @DeleteMapping("/water-boxes/{id}")
-    public ResponseEntity<Void> deleteWaterBox(@PathVariable Long id) {
-        waterBoxService.delete(id);
-        return ResponseEntity.noContent().build();
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<Void> deleteWaterBox(@PathVariable Long id) {
+        return waterBoxService.delete(id);
     }
 
     @PatchMapping("/water-boxes/{id}/restore")
-    public ResponseEntity<WaterBoxResponse> restoreWaterBox(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxService.restore(id));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxResponse> restoreWaterBox(@PathVariable Long id) {
+        return waterBoxService.restore(id);
     }
 
     // ===============================
@@ -71,39 +79,47 @@ public class AdminRest {
     // ===============================
 
     @GetMapping("/water-box-assignments/active")
-    public ResponseEntity<List<WaterBoxAssignmentResponse>> getAllActiveAssignments() {
-        return ResponseEntity.ok(waterBoxAssignmentService.getAllActive());
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<WaterBoxAssignmentResponse> getAllActiveAssignments() {
+        return waterBoxAssignmentService.getAllActive();
     }
 
     @GetMapping("/water-box-assignments/inactive")
-    public ResponseEntity<List<WaterBoxAssignmentResponse>> getAllInactiveAssignments() {
-        return ResponseEntity.ok(waterBoxAssignmentService.getAllInactive());
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<WaterBoxAssignmentResponse> getAllInactiveAssignments() {
+        return waterBoxAssignmentService.getAllInactive();
     }
 
     @GetMapping("/water-box-assignments/{id}")
-    public ResponseEntity<WaterBoxAssignmentResponse> getAssignmentById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxAssignmentService.getById(id));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxAssignmentResponse> getAssignmentById(@PathVariable Long id) {
+        return waterBoxAssignmentService.getById(id);
     }
 
     @PostMapping("/water-box-assignments")
-    public ResponseEntity<WaterBoxAssignmentResponse> createAssignment(@Valid @RequestBody WaterBoxAssignmentRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(waterBoxAssignmentService.save(request));
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxAssignmentResponse> createAssignment(@Valid @RequestBody WaterBoxAssignmentRequest request) {
+        return waterBoxAssignmentService.save(request);
     }
 
     @PutMapping("/water-box-assignments/{id}")
-    public ResponseEntity<WaterBoxAssignmentResponse> updateAssignment(@PathVariable Long id, @Valid @RequestBody WaterBoxAssignmentRequest request) {
-        return ResponseEntity.ok(waterBoxAssignmentService.update(id, request));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxAssignmentResponse> updateAssignment(@PathVariable Long id, @Valid @RequestBody WaterBoxAssignmentRequest request) {
+        return waterBoxAssignmentService.update(id, request);
     }
 
     @DeleteMapping("/water-box-assignments/{id}")
-    public ResponseEntity<Void> deleteAssignment(@PathVariable Long id) {
-        waterBoxAssignmentService.delete(id);
-        return ResponseEntity.noContent().build();
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<Void> deleteAssignment(@PathVariable Long id) {
+        return waterBoxAssignmentService.delete(id);
     }
 
     @PatchMapping("/water-box-assignments/{id}/restore")
-    public ResponseEntity<WaterBoxAssignmentResponse> restoreAssignment(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxAssignmentService.restore(id));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxAssignmentResponse> restoreAssignment(@PathVariable Long id) {
+        return waterBoxAssignmentService.restore(id);
     }
 
     // ===============================
@@ -111,17 +127,21 @@ public class AdminRest {
     // ===============================
 
     @GetMapping("/water-box-transfers")
-    public ResponseEntity<List<WaterBoxTransferResponse>> getAllTransfers() {
-        return ResponseEntity.ok(waterBoxTransferService.getAll());
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<WaterBoxTransferResponse> getAllTransfers() {
+        return waterBoxTransferService.getAll();
     }
 
     @GetMapping("/water-box-transfers/{id}")
-    public ResponseEntity<WaterBoxTransferResponse> getTransferById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxTransferService.getById(id));
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxTransferResponse> getTransferById(@PathVariable Long id) {
+        return waterBoxTransferService.getById(id);
     }
 
     @PostMapping("/water-box-transfers")
-    public ResponseEntity<WaterBoxTransferResponse> createTransfer(@Valid @RequestBody WaterBoxTransferRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(waterBoxTransferService.save(request));
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<WaterBoxTransferResponse> createTransfer(@Valid @RequestBody WaterBoxTransferRequest request) {
+        return waterBoxTransferService.save(request);
     }
 }

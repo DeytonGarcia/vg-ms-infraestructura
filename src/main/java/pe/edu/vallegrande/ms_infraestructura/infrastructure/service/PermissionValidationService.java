@@ -9,16 +9,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
-
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.stereotype.Service;
-import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Mono;
-
-import java.util.List;
-
 @Service
 public class PermissionValidationService {
 

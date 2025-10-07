@@ -1,7 +1,7 @@
 package pe.edu.vallegrande.ms_infraestructura.infrastructure.rest.client;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxService;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxAssignmentService;
@@ -9,8 +9,8 @@ import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxTrans
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxResponse;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxAssignmentResponse;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.response.WaterBoxTransferResponse;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/client")
@@ -26,18 +26,21 @@ public class ClientRest {
     // ===============================
 
     @GetMapping("/water-boxes/active")
-    public ResponseEntity<List<WaterBoxResponse>> getAllActiveWaterBoxes() {
-        return ResponseEntity.ok(waterBoxService.getAllActive());
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Flux<WaterBoxResponse> getAllActiveWaterBoxes() {
+        return waterBoxService.getAllActive();
     }
 
     @GetMapping("/water-boxes/inactive")
-    public ResponseEntity<List<WaterBoxResponse>> getAllInactiveWaterBoxes() {
-        return ResponseEntity.ok(waterBoxService.getAllInactive());
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Flux<WaterBoxResponse> getAllInactiveWaterBoxes() {
+        return waterBoxService.getAllInactive();
     }
 
     @GetMapping("/water-boxes/{id}")
-    public ResponseEntity<WaterBoxResponse> getWaterBoxById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxService.getById(id));
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Mono<WaterBoxResponse> getWaterBoxById(@PathVariable Long id) {
+        return waterBoxService.getById(id);
     }
 
     // ===============================
@@ -45,18 +48,21 @@ public class ClientRest {
     // ===============================
 
     @GetMapping("/water-box-assignments/active")
-    public ResponseEntity<List<WaterBoxAssignmentResponse>> getAllActiveAssignments() {
-        return ResponseEntity.ok(waterBoxAssignmentService.getAllActive());
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Flux<WaterBoxAssignmentResponse> getAllActiveAssignments() {
+        return waterBoxAssignmentService.getAllActive();
     }
 
     @GetMapping("/water-box-assignments/inactive")
-    public ResponseEntity<List<WaterBoxAssignmentResponse>> getAllInactiveAssignments() {
-        return ResponseEntity.ok(waterBoxAssignmentService.getAllInactive());
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Flux<WaterBoxAssignmentResponse> getAllInactiveAssignments() {
+        return waterBoxAssignmentService.getAllInactive();
     }
 
     @GetMapping("/water-box-assignments/{id}")
-    public ResponseEntity<WaterBoxAssignmentResponse> getAssignmentById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxAssignmentService.getById(id));
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Mono<WaterBoxAssignmentResponse> getAssignmentById(@PathVariable Long id) {
+        return waterBoxAssignmentService.getById(id);
     }
 
     // ===============================
@@ -64,12 +70,14 @@ public class ClientRest {
     // ===============================
 
     @GetMapping("/water-box-transfers")
-    public ResponseEntity<List<WaterBoxTransferResponse>> getAllTransfers() {
-        return ResponseEntity.ok(waterBoxTransferService.getAll());
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Flux<WaterBoxTransferResponse> getAllTransfers() {
+        return waterBoxTransferService.getAll();
     }
 
     @GetMapping("/water-box-transfers/{id}")
-    public ResponseEntity<WaterBoxTransferResponse> getTransferById(@PathVariable Long id) {
-        return ResponseEntity.ok(waterBoxTransferService.getById(id));
+    @PreAuthorize("hasRole('CLIENT') or hasRole('ADMIN')")
+    public Mono<WaterBoxTransferResponse> getTransferById(@PathVariable Long id) {
+        return waterBoxTransferService.getById(id);
     }
 }

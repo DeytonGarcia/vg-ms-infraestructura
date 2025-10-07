@@ -1,46 +1,60 @@
 package pe.edu.vallegrande.ms_infraestructura.domain.models;
 
-import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import pe.edu.vallegrande.ms_infraestructura.infrastructure.dto.StringListConverter;
 
-@Entity
-@Table(name = "water_box_transfers")
+@Table("water_box_transfers")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EntityListeners(AuditingEntityListener.class)
 public class WaterBoxTransfer {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // Autoincremental
-    @Column(name = "id", updatable = false, nullable = false)
-    private Long id; // ID numérico
+    private Long id;
 
-    @Column(name = "water_box_id", nullable = false)
-    private Long waterBoxId; // ID numérico de la WaterBox
+    @Column("water_box_id")
+    private Long waterBoxId;
 
-    @Column(name = "old_assignment_id", nullable = false)
-    private Long oldAssignmentId; // ID numérico de la asignación anterior
+    @Column("old_assignment_id")
+    private Long oldAssignmentId;
 
-    @Column(name = "new_assignment_id", nullable = false)
-    private Long newAssignmentId; // ID numérico de la nueva asignación
+    @Column("new_assignment_id")
+    private Long newAssignmentId;
 
-    @Column(name = "transfer_reason", nullable = false, length = 255)
+    @Column("transfer_reason")
     private String transferReason;
 
-    @Column(name = "documents", columnDefinition = "text") // Usamos TEXT para almacenar la lista como String
-    @Convert(converter = StringListConverter.class)
-    private List<String> documents; // Almacenamos como String directamente
+    @Column("documents")
+    private String documentsJson; // Almacenaremos como JSON string
 
     @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column("created_at")
     private LocalDateTime createdAt;
+
+    // Métodos helper para manejar la lista de documentos
+    public List<String> getDocuments() {
+        if (documentsJson == null || documentsJson.isEmpty()) {
+            return List.of();
+        }
+        try {
+            return List.of(documentsJson.split(","));
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    public void setDocuments(List<String> documents) {
+        if (documents == null || documents.isEmpty()) {
+            this.documentsJson = null;
+        } else {
+            this.documentsJson = String.join(",", documents);
+        }
+    }
 }

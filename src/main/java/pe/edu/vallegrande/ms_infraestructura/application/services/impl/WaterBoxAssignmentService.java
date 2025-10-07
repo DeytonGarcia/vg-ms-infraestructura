@@ -1,6 +1,7 @@
 package pe.edu.vallegrande.ms_infraestructura.application.services.impl;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.vallegrande.ms_infraestructura.application.services.IWaterBoxAssignmentService;
@@ -13,147 +14,164 @@ import pe.edu.vallegrande.ms_infraestructura.infrastructure.exceptions.BadReques
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.exceptions.NotFoundException;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxAssignmentRepository;
 import pe.edu.vallegrande.ms_infraestructura.infrastructure.repository.WaterBoxRepository;
+import pe.edu.vallegrande.ms_infraestructura.infrastructure.service.ReactiveJwtService;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WaterBoxAssignmentService implements IWaterBoxAssignmentService {
 
     private final WaterBoxAssignmentRepository waterBoxAssignmentRepository;
     private final WaterBoxRepository waterBoxRepository;
+    private final ReactiveJwtService jwtService;
 
     @Override
     @Transactional(readOnly = true)
-    public List<WaterBoxAssignmentResponse> getAllActive() {
-        return waterBoxAssignmentRepository.findByStatus(Status.ACTIVE).stream()
+    public Flux<WaterBoxAssignmentResponse> getAllActive() {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando asignaciones activas", userInfo.getUsername()))
+                .flatMapMany(userInfo -> waterBoxAssignmentRepository.findByStatus(Status.ACTIVE))
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .doOnNext(response -> log.debug("Asignación activa encontrada: {}", response.getId()));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<WaterBoxAssignmentResponse> getAllInactive() {
-        return waterBoxAssignmentRepository.findByStatus(Status.INACTIVE).stream()
+    public Flux<WaterBoxAssignmentResponse> getAllInactive() {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando asignaciones inactivas", userInfo.getUsername()))
+                .flatMapMany(userInfo -> waterBoxAssignmentRepository.findByStatus(Status.INACTIVE))
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .doOnNext(response -> log.debug("Asignación inactiva encontrada: {}", response.getId()));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public WaterBoxAssignmentResponse getById(Long id) {
-        WaterBoxAssignment assignment = waterBoxAssignmentRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada."));
-        return toResponse(assignment);
+    public Mono<WaterBoxAssignmentResponse> getById(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} consultando asignación con ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxAssignmentRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada.")))
+                .map(this::toResponse)
+                .doOnNext(response -> log.debug("Asignación encontrada: {}", response.getId()));
     }
 
     @Override
     @Transactional
-    public WaterBoxAssignmentResponse save(WaterBoxAssignmentRequest request) {
-        // Validar si la WaterBox existe y está activa
-        WaterBox waterBox = waterBoxRepository.findById(request.getWaterBoxId())
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada."));
-
-        if (waterBox.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("No se puede asignar a una WaterBox inactiva.");
-        }
-
-        // Si la WaterBox ya tiene una asignación actual, desactivarla.
-        //if (waterBox.getCurrentAssignmentId() != null) {
-         //   waterBoxAssignmentRepository.findById(waterBox.getCurrentAssignmentId()).ifPresent(currentAssignment -> {
-           //     currentAssignment.setStatus(Status.INACTIVE);
-         //       currentAssignment.setEndDate(LocalDateTime.now());
-        //        waterBoxAssignmentRepository.save(currentAssignment);
-        //    });
-       // }
-
-        WaterBoxAssignment assignment = toEntity(request);
-        assignment.setStatus(Status.ACTIVE);
-        assignment.setCreatedAt(LocalDateTime.now());
-
-        WaterBoxAssignment savedAssignment = waterBoxAssignmentRepository.save(assignment);
-
-        // Actualizar la WaterBox con la nueva asignación actual
-        waterBox.setCurrentAssignmentId(savedAssignment.getId());
-        waterBoxRepository.save(waterBox);
-
-        return toResponse(savedAssignment);
+    public Mono<WaterBoxAssignmentResponse> save(WaterBoxAssignmentRequest request) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} creando nueva asignación para WaterBox ID: {}", userInfo.getUsername(), request.getWaterBoxId()))
+                .flatMap(userInfo -> waterBoxRepository.findById(request.getWaterBoxId()))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada.")))
+                .flatMap(waterBox -> {
+                    if (waterBox.getStatus().equals(Status.INACTIVE)) {
+                        return Mono.error(new BadRequestException("No se puede asignar a una WaterBox inactiva."));
+                    }
+                    
+                    WaterBoxAssignment assignment = toEntity(request);
+                    assignment.setStatus(Status.ACTIVE);
+                    assignment.setCreatedAt(LocalDateTime.now());
+                    
+                    return waterBoxAssignmentRepository.save(assignment)
+                            .flatMap(savedAssignment -> {
+                                // Actualizar la WaterBox con la nueva asignación actual
+                                waterBox.setCurrentAssignmentId(savedAssignment.getId());
+                                return waterBoxRepository.save(waterBox)
+                                        .thenReturn(savedAssignment);
+                            });
+                })
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Asignación creada exitosamente: {}", response.getId()));
     }
 
     @Override
     @Transactional
-    public WaterBoxAssignmentResponse update(Long id, WaterBoxAssignmentRequest request) {
-        WaterBoxAssignment existingAssignment = waterBoxAssignmentRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para actualizar."));
-
-        // Asegurarse de que la WaterBox referenciada exista
-        waterBoxRepository.findById(request.getWaterBoxId())
-                .orElseThrow(() -> new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada."));
-
-        existingAssignment.setWaterBoxId(request.getWaterBoxId());
-        existingAssignment.setUserId(request.getUserId());
-        existingAssignment.setStartDate(request.getStartDate());
-        existingAssignment.setMonthlyFee(request.getMonthlyFee());
-        // El status y created_at no se actualizan directamente en este método.
-
-        WaterBoxAssignment updatedAssignment = waterBoxAssignmentRepository.save(existingAssignment);
-        return toResponse(updatedAssignment);
+    public Mono<WaterBoxAssignmentResponse> update(Long id, WaterBoxAssignmentRequest request) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} actualizando asignación ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxAssignmentRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para actualizar.")))
+                .flatMap(existingAssignment -> 
+                    waterBoxRepository.findById(request.getWaterBoxId())
+                            .switchIfEmpty(Mono.error(new NotFoundException("WaterBox con ID " + request.getWaterBoxId() + " no encontrada.")))
+                            .map(waterBox -> {
+                                existingAssignment.setWaterBoxId(request.getWaterBoxId());
+                                existingAssignment.setUserId(request.getUserId());
+                                existingAssignment.setStartDate(request.getStartDate());
+                                existingAssignment.setMonthlyFee(request.getMonthlyFee());
+                                return existingAssignment;
+                            })
+                )
+                .flatMap(waterBoxAssignmentRepository::save)
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Asignación actualizada exitosamente: {}", response.getId()));
     }
 
     @Override
     @Transactional
-    public void delete(Long id) { // Soft delete
-        WaterBoxAssignment assignment = waterBoxAssignmentRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para eliminación."));
-
-        if (assignment.getStatus().equals(Status.INACTIVE)) {
-            throw new BadRequestException("WaterBoxAssignment con ID " + id + " ya está inactiva.");
-        }
-
-        // Si esta asignación es la `current_assignment_id` de una WaterBox, desvincularla
-        waterBoxRepository.findByCurrentAssignmentId(assignment.getId()).ifPresent(waterBox -> {
-            waterBox.setCurrentAssignmentId(null);
-            waterBoxRepository.save(waterBox);
-        });
-
-        assignment.setStatus(Status.INACTIVE);
-        assignment.setEndDate(LocalDateTime.now());
-        waterBoxAssignmentRepository.save(assignment);
+    public Mono<Void> delete(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} eliminando asignación ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxAssignmentRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para eliminación.")))
+                .flatMap(assignment -> {
+                    if (assignment.getStatus().equals(Status.INACTIVE)) {
+                        return Mono.error(new BadRequestException("WaterBoxAssignment con ID " + id + " ya está inactiva."));
+                    }
+                    
+                    // Si esta asignación es la current_assignment_id de una WaterBox, desvincularla
+                    return waterBoxRepository.findByCurrentAssignmentId(assignment.getId())
+                            .flatMap(waterBox -> {
+                                waterBox.setCurrentAssignmentId(null);
+                                return waterBoxRepository.save(waterBox);
+                            })
+                            .then(Mono.fromCallable(() -> {
+                                assignment.setStatus(Status.INACTIVE);
+                                assignment.setEndDate(LocalDateTime.now());
+                                return assignment;
+                            }))
+                            .flatMap(waterBoxAssignmentRepository::save);
+                })
+                .then()
+                .doOnSuccess(unused -> log.info("Asignación ID: {} eliminada exitosamente", id));
     }
 
     @Override
     @Transactional
-    public WaterBoxAssignmentResponse restore(Long id) { // Restore soft deleted
-        WaterBoxAssignment assignment = waterBoxAssignmentRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para restauración."));
-
-        if (assignment.getStatus().equals(Status.ACTIVE)) {
-            throw new BadRequestException("WaterBoxAssignment con ID " + id + " ya está activa.");
-        }
-
-        assignment.setStatus(Status.ACTIVE);
-        assignment.setEndDate(null); // Borra la fecha de fin al restaurar
-        WaterBoxAssignment restoredAssignment = waterBoxAssignmentRepository.save(assignment);
-
-        // Si se restaura una asignación, y su WaterBox está activa, debería ser la asignación actual
-        // No forzamos que sea la current_assignment_id aquí, se podría manejar con un caso de uso específico.
-        // Por ahora, solo restauramos la asignación en sí.
-        // Si quieres que se convierta en la current_assignment_id de su WaterBox,
-        // deberías agregar lógica para eso (ej. verificar si la WaterBox tiene otra asignación activa).
-        // Por simplicidad, esta lógica no lo hace automáticamente a menos que no haya otra activa.
-        waterBoxRepository.findById(restoredAssignment.getWaterBoxId()).ifPresent(waterBox -> {
-            // Solo actualiza current_assignment_id si la WaterBox no tiene otra asignación activa
-            if (waterBox.getCurrentAssignmentId() == null || waterBoxAssignmentRepository.findById(waterBox.getCurrentAssignmentId())
-                    .map(a -> a.getStatus().equals(Status.INACTIVE)).orElse(true)) {
-                waterBox.setCurrentAssignmentId(restoredAssignment.getId());
-                waterBoxRepository.save(waterBox);
-            }
-        });
-
-
-        return toResponse(restoredAssignment);
+    public Mono<WaterBoxAssignmentResponse> restore(Long id) {
+        return jwtService.getCurrentUserInfo()
+                .doOnNext(userInfo -> log.info("Usuario {} restaurando asignación ID: {}", userInfo.getUsername(), id))
+                .flatMap(userInfo -> waterBoxAssignmentRepository.findById(id))
+                .switchIfEmpty(Mono.error(new NotFoundException("WaterBoxAssignment con ID " + id + " no encontrada para restauración.")))
+                .flatMap(assignment -> {
+                    if (assignment.getStatus().equals(Status.ACTIVE)) {
+                        return Mono.error(new BadRequestException("WaterBoxAssignment con ID " + id + " ya está activa."));
+                    }
+                    
+                    assignment.setStatus(Status.ACTIVE);
+                    assignment.setEndDate(null);
+                    
+                    return waterBoxAssignmentRepository.save(assignment)
+                            .flatMap(restoredAssignment -> 
+                                waterBoxRepository.findById(restoredAssignment.getWaterBoxId())
+                                        .flatMap(waterBox -> {
+                                            // Solo actualiza current_assignment_id si la WaterBox no tiene otra asignación activa
+                                            if (waterBox.getCurrentAssignmentId() == null) {
+                                                waterBox.setCurrentAssignmentId(restoredAssignment.getId());
+                                                return waterBoxRepository.save(waterBox)
+                                                        .thenReturn(restoredAssignment);
+                                            }
+                                            return Mono.just(restoredAssignment);
+                                        })
+                                        .switchIfEmpty(Mono.just(restoredAssignment))
+                            );
+                })
+                .map(this::toResponse)
+                .doOnNext(response -> log.info("Asignación restaurada exitosamente: {}", response.getId()));
     }
 
     private WaterBoxAssignment toEntity(WaterBoxAssignmentRequest request) {
