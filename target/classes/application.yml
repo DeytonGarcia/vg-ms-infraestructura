@@ -1,0 +1,39 @@
+spring:
+     jpa:
+          properties:
+               hibernate:
+                    dialect: org.hibernate.dialect.PostgreSQLDialect
+                    format_sql: "true"
+          hibernate:
+               ddl-auto: update
+          show-sql: "true"
+     datasource:
+          url: jdbc:postgresql://ep-ancient-heart-adqsgk4v-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+          username: neondb_owner
+          password: npg_D5vbm4icMYuf
+# CONFIGURACIÓN OAUTH2 RESOURCE SERVER (KEYCLOAK JWK SET)
+     security:
+          oauth2:
+               resourceserver:
+                    jwt:
+                         # URL del JWK Set de Keycloak para validar tokens
+                         jwk-set-uri: https://lab.vallegrande.edu.pe/jass/keycloak/realms/sistema-jass/protocol/openid-connect/certs
+                         issuer-uri: https://lab.vallegrande.edu.pe/jass/keycloak/realms/sistema-jass
+springdoc:
+     api-docs:
+          path: /v3/api-docs
+          enabled: true
+
+     swagger-ui:
+          path: /swagger-ui.html
+          try-it-out-enabled: true
+          operations-sorter: method
+          tags-sorter: alpha
+          display-request-duration: true
+          disable-swagger-default-url: true
+
+     show-actuator: false
+
+server:
+     port: "8084"
+     forward-headers-strategy: framework
